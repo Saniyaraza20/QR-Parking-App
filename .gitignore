@@ -1,0 +1,10 @@
+node_modules/
+ADMIN_CREDENTIALS.local.txt
+PASSWORD_RESET_LINKS.local.txt
+db/parking.sqlite3
+db/parking.sqlite3-wal
+db/parking.sqlite3-shm
+.env
+.env.local
+client/dist/
+*.log
