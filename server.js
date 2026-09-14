@@ -14,6 +14,10 @@ const driverRoutes = require('./routes/drivers');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust Render's reverse proxy so express-rate-limit sees real client IPs
+// instead of Render's internal proxy IP (which would make everyone share one bucket).
+app.set('trust proxy', 1);
+
 // Capture the exact raw bytes of the body as it arrives, so payment webhook
 // signature verification checks the real payload, not a re-serialized copy.
 app.use(
@@ -45,14 +49,13 @@ const apiLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-app.use('/api/', apiLimiter);
 app.use('/api/parking', parkingLimiter, parkingRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/drivers', driverRoutes);
 app.use(
   '/api/staff/users',
   requireAuth,
-  requireRole(['staff', 'manager']), // blocks a valid driver JWT from even reaching the manager check below
+  requireRole(['staff', 'manager']),
   requirePasswordChanged,
   requireRole('manager'),
   usersRoutes
@@ -60,11 +63,11 @@ app.use(
 app.use(
   '/api/staff',
   requireAuth,
-  requireRole(['staff', 'manager']), // a driver's token is a perfectly valid JWT but must not open staff routes
+  requireRole(['staff', 'manager']),
   requirePasswordChanged,
   staffRoutes
 );
-app.use('/api', paymentRoutes);
+app.use('/api', apiLimiter, paymentRoutes);
 
 app.get('/healthz', (req, res) => res.json({ ok: true }));
 
@@ -81,16 +84,6 @@ app.get('*', (req, res, next) => {
   res.sendFile(path.join(__dirname, 'client', 'dist', 'index.html'));
 });
 
-// Two independent reconciliation sweeps, run every 2 minutes:
-//
-// 1. Abandoned reservations: a spot was optimistically marked occupied at
-//    /api/parking/reserve, but the driver never completed payment (closed
-//    the tab, etc.) - release it back to available after a short hold window.
-//
-// 2. Expired active sessions: since the fee is a flat prepaid amount (not
-//    time-billed), a booking is simply "good for N hours" - once that's up,
-//    the spot frees itself automatically. This is now the NORMAL way a
-//    session ends, not just a failsafe.
 function reconcile() {
   const holdMinutes = Number(getConfig('reservation_hold_minutes', 10));
   const abandoned = db
