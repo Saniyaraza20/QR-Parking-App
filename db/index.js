@@ -158,4 +158,15 @@ if (!adminExists) {
   console.log('--------------------------------------------------------');
 }
 
+// ADMIN_PASSWORD env var = force-reset admin password on every boot.
+// Set it in Render -> Environment, redeploy, log in, then REMOVE it and redeploy again.
+if (process.env.ADMIN_PASSWORD) {
+  const bcrypt = require('bcryptjs');
+  const passwordHash = bcrypt.hashSync(process.env.ADMIN_PASSWORD, 10);
+  db.prepare(
+    "UPDATE users SET password_hash = ?, must_change_password = 0, active = 1 WHERE username = 'admin'"
+  ).run(passwordHash);
+  console.log('ADMIN PASSWORD RESET via env var. Remove ADMIN_PASSWORD from Render after login!');
+}
+
 module.exports = { db, getConfig, setConfig };
