@@ -125,4 +125,37 @@ if (!getConfig('qr_secret')) setConfig('qr_secret', require('crypto').randomByte
 if (!getConfig('jwt_secret')) setConfig('jwt_secret', require('crypto').randomBytes(32).toString('hex'));
 if (!getConfig('webhook_secret')) setConfig('webhook_secret', require('crypto').randomBytes(32).toString('hex'));
 
+// Auto-seed on first boot: create 12 parking spots if none exist.
+// This runs every startup but INSERT OR IGNORE means it's a no-op after first run.
+const spotCount = db.prepare('SELECT COUNT(*) as n FROM spots').get().n;
+if (spotCount === 0) {
+  const insertSpot = db.prepare('INSERT OR IGNORE INTO spots (code, label) VALUES (?, ?)');
+  const seedSpots = db.transaction(() => {
+    for (let i = 1; i <= 12; i++) {
+      const code = `A-${String(i).padStart(2, '0')}`;
+      insertSpot.run(code, `Spot ${code}`);
+    }
+  });
+  seedSpots();
+  console.log('Auto-seeded 12 parking spots (A-01 to A-12).');
+}
+
+// Auto-seed admin user on first boot if none exists.
+const adminExists = db.prepare("SELECT id FROM users WHERE username = 'admin'").get();
+if (!adminExists) {
+  const crypto = require('crypto');
+  const bcrypt = require('bcryptjs');
+  const password = process.env.ADMIN_PASSWORD || crypto.randomBytes(9).toString('base64url');
+  const passwordHash = bcrypt.hashSync(password, 10);
+  db.prepare(
+    'INSERT INTO users (username, password_hash, role, must_change_password) VALUES (?, ?, ?, 1)'
+  ).run('admin', passwordHash, 'manager');
+  console.log('--------------------------------------------------------');
+  console.log('Auto-created staff login:');
+  console.log('  username: admin');
+  console.log(`  password: ${password}`);
+  console.log('Login and change your password immediately.');
+  console.log('--------------------------------------------------------');
+}
+
 module.exports = { db, getConfig, setConfig };
